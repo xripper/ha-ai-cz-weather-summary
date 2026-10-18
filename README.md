@@ -15,24 +15,30 @@ Místa mimo ČR dostanou jen data z modelu ALADIN.
 1. HACS → Integrace → menu ⋮ → *Vlastní repozitáře* → `https://github.com/xripper/ha-ai-cz-weather-summary`, kategorie *Integrace*.
 2. Nainstaluj **CZ Weather Summary** a restartuj Home Assistant.
 3. *Nastavení → Zařízení a služby → Přidat integraci → CZ Weather Summary.*
-4. Zadej OpenAI API klíč, vyber model, čas denního generování (výchozí 06:00) a 1–3 místa (název + poloha na mapě; první místo je předvyplněné podle domova).
+4. Zadej OpenAI API klíč, vyber model a čas denního generování (výchozí 06:00).
+5. Přidej první místo (název + poloha na mapě, předvyplněno podle domova). Pak zvol *Přidat další místo* nebo *Dokončit* – celkem 1 až 3 místa.
 
-V *Možnostech* integrace můžeš později změnit model, čas, místa, kraj ČHMÚ pro každé místo (pokud ho automatika u hranice kraje určí špatně) a **systémový prompt** (styl a obsah textu; smazáním se vrátí výchozí). Místo 2 nebo 3 odebereš smazáním jeho názvu. Po uložení se souhrn hned vygeneruje znovu.
+V *Možnostech* integrace je menu: **Model, čas a prompt** (systémový prompt určuje styl a obsah textu; smazáním se vrátí výchozí), **Upravit místo** (včetně ručního výběru kraje ČHMÚ, pokud ho automatika u hranice kraje určí špatně), **Přidat místo** a **Odebrat místo**. Po uložení se souhrn hned vygeneruje znovu.
 
 Při výpadku ČHMÚ nebo OpenAI zůstane zobrazen předchozí souhrn a integrace to zkusí znovu každých 30 minut (max. 6×).
 
-## Senzor
+## Senzory
 
-`sensor.souhrn_pocasi_souhrn_pocasi` (název se může lišit podle jazyka):
+| Senzor (česká instalace) | Stav |
+|---|---|
+| `sensor.souhrn_pocasi_kratky_souhrn` | jedna krátká věta |
+| `sensor.souhrn_pocasi_souhrn_pocasi` | celý souhrn |
+| `sensor.souhrn_pocasi_doporuceni_obleceni` | co si vzít na sebe |
+
+Home Assistant omezuje stav senzoru na 255 znaků, proto má každý senzor celý text i v atributu `text`. Krátký souhrn má navíc atributy:
 
 | | |
 |---|---|
-| stav | jedna krátká věta (max 255 znaků) |
-| `summary` | celý souhrn |
-| `clothing` | doporučení, co si vzít na sebe |
 | `locations` | data jednotlivých míst (kraj, min/max teplota, srážky, vítr, výstrahy) |
 | `generated_at`, `model` | kdy a jakým modelem byl text vytvořen |
 | `last_error` | poslední chyba (při chybě zůstává zobrazen předchozí souhrn) |
+
+Přesná entity_id najdeš v *Nastavení → Zařízení a služby → CZ Weather Summary*.
 
 Souhrn se generuje jednou denně v nastavený čas. Po restartu HA se znovu negeneruje, pokud je platný; pokud byl HA v naplánovaný čas vypnutý, vygeneruje se po startu.
 
@@ -45,11 +51,11 @@ Souhrn se generuje jednou denně v nastavený čas. Po restartu HA se znovu nege
 ```yaml
 type: markdown
 content: >
-  ### {{ states('sensor.souhrn_pocasi_souhrn_pocasi') }}
+  ### {{ states('sensor.souhrn_pocasi_kratky_souhrn') }}
 
-  {{ state_attr('sensor.souhrn_pocasi_souhrn_pocasi', 'summary') }}
+  {{ state_attr('sensor.souhrn_pocasi_souhrn_pocasi', 'text') }}
 
-  **Co na sebe:** {{ state_attr('sensor.souhrn_pocasi_souhrn_pocasi', 'clothing') }}
+  **Co na sebe:** {{ state_attr('sensor.souhrn_pocasi_doporuceni_obleceni', 'text') }}
 ```
 
 ## Cena

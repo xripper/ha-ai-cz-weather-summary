@@ -46,6 +46,9 @@ from .llm import OpenAIAuthError, OpenAIClient, OpenAIError, default_model
 
 _LOGGER = logging.getLogger(__name__)
 
+CONF_LOCATION = "location"
+CONF_INDEX = "index"
+
 API_KEY_SCHEMA = vol.Schema(
     {vol.Required(CONF_API_KEY): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))}
 )
@@ -80,76 +83,48 @@ def _region_selector() -> SelectSelector:
     return SelectSelector(SelectSelectorConfig(options=options, mode=SelectSelectorMode.DROPDOWN))
 
 
-def _suggested(value: Any) -> dict[str, Any]:
-    return {"description": {"suggested_value": value}} if value is not None else {}
+def _location_schema(
+    name: str | None, latitude: float, longitude: float, region: str | None = None
+) -> vol.Schema:
+    """Form for a single location; region only in the options flow."""
+    fields: dict[vol.Marker, Any] = {
+        vol.Required(CONF_NAME, description={"suggested_value": name} if name else None): (
+            TextSelector()
+        ),
+        vol.Required(
+            CONF_LOCATION, default={CONF_LATITUDE: latitude, CONF_LONGITUDE: longitude}
+        ): LocationSelector(LocationSelectorConfig(radius=False)),
+    }
+    if region is not None:
+        fields[vol.Required(CONF_REGION, default=region)] = _region_selector()
+    return vol.Schema(fields)
 
 
-def _locations_schema(
-    hass: HomeAssistant, locations: list[dict[str, Any]], with_region: bool
-) -> dict[vol.Marker, Any]:
-    """Schema fields for up to MAX_LOCATIONS locations."""
-    fields: dict[vol.Marker, Any] = {}
-    for i in range(1, MAX_LOCATIONS + 1):
-        current = locations[i - 1] if i <= len(locations) else None
-        if current:
-            name_default: str | None = current[CONF_NAME]
-            loc_default: dict[str, float] | None = {
-                CONF_LATITUDE: current[CONF_LATITUDE],
-                CONF_LONGITUDE: current[CONF_LONGITUDE],
-            }
-        elif i == 1:
-            name_default = "Doma"
-            loc_default = {
-                CONF_LATITUDE: hass.config.latitude,
-                CONF_LONGITUDE: hass.config.longitude,
-            }
-        else:
-            name_default = loc_default = None
-
-        # suggested_value (not default) so optional locations can be cleared.
-        marker = vol.Required if i == 1 else vol.Optional
-        fields[marker(f"{CONF_NAME}_{i}", **_suggested(name_default))] = TextSelector()
-        fields[marker(f"location_{i}", **_suggested(loc_default))] = LocationSelector(
-            LocationSelectorConfig(radius=False)
-        )
-        if with_region:
-            fields[
-                vol.Optional(
-                    f"{CONF_REGION}_{i}",
-                    default=(current or {}).get(CONF_REGION, REGION_AUTO),
-                )
-            ] = _region_selector()
-    return fields
+def _location_from_input(user_input: dict[str, Any], region: str = REGION_AUTO) -> dict[str, Any]:
+    location = user_input[CONF_LOCATION]
+    return {
+        CONF_NAME: user_input[CONF_NAME].strip(),
+        CONF_LATITUDE: round(float(location[CONF_LATITUDE]), 5),
+        CONF_LONGITUDE: round(float(location[CONF_LONGITUDE]), 5),
+        CONF_REGION: user_input.get(CONF_REGION, region),
+    }
 
 
-def _parse_locations(user_input: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, str]]:
-    """Turn flat form fields into a location list."""
-    locations: list[dict[str, Any]] = []
-    errors: dict[str, str] = {}
-    for i in range(1, MAX_LOCATIONS + 1):
-        name = (user_input.get(f"{CONF_NAME}_{i}") or "").strip()
-        location = user_input.get(f"location_{i}")
-        # An empty name means the slot is unused: the map selector can't be cleared.
-        if not name:
-            continue
-        if not location:
-            errors[f"location_{i}"] = "location_required"
-            continue
-        locations.append(
-            {
-                CONF_NAME: name,
-                CONF_LATITUDE: round(float(location[CONF_LATITUDE]), 5),
-                CONF_LONGITUDE: round(float(location[CONF_LONGITUDE]), 5),
-                CONF_REGION: user_input.get(f"{CONF_REGION}_{i}", REGION_AUTO),
-            }
-        )
-    if not locations and not errors:
-        errors["base"] = "no_locations"
-    return locations, errors
+def _index_schema(locations: list[dict[str, Any]]) -> vol.Schema:
+    options = [
+        SelectOptionDict(value=str(i), label=loc[CONF_NAME]) for i, loc in enumerate(locations)
+    ]
+    return vol.Schema(
+        {
+            vol.Required(CONF_INDEX, default="0"): SelectSelector(
+                SelectSelectorConfig(options=options, mode=SelectSelectorMode.LIST)
+            )
+        }
+    )
 
 
 class CzWeatherConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Handle a config flow."""
+    """Set up: API key, model and time, then locations one by one."""
 
     VERSION = 1
 
@@ -157,6 +132,8 @@ class CzWeatherConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize the flow."""
         self._api_key: str = ""
         self._models: list[str] = []
+        self._settings: dict[str, Any] = {}
+        self._locations: list[dict[str, Any]] = []
 
     @staticmethod
     @callback
@@ -173,38 +150,66 @@ class CzWeatherConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = error
             else:
                 self._api_key = user_input[CONF_API_KEY]
-                return await self.async_step_locations()
+                return await self.async_step_settings()
         return self.async_show_form(step_id="user", data_schema=API_KEY_SCHEMA, errors=errors)
 
-    async def async_step_locations(
+    async def async_step_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Configure model and locations."""
-        errors: dict[str, str] = {}
+        """Pick the model and the daily generation time."""
         if user_input is not None:
-            locations, errors = _parse_locations(user_input)
-            if not errors:
-                return self.async_create_entry(
-                    title="Souhrn počasí",
-                    data={CONF_API_KEY: self._api_key},
-                    options={
-                        CONF_MODEL: user_input[CONF_MODEL],
-                        CONF_UPDATE_TIME: user_input[CONF_UPDATE_TIME],
-                        CONF_PROMPT: DEFAULT_PROMPT,
-                        CONF_LOCATIONS: locations,
-                    },
-                )
-        schema = {
-            vol.Required(
-                CONF_MODEL, default=default_model(self._models, DEFAULT_MODEL)
-            ): _model_selector(self._models),
-            vol.Required(CONF_UPDATE_TIME, default=DEFAULT_UPDATE_TIME): TimeSelector(),
-            **_locations_schema(self.hass, [], with_region=False),
-        }
-        data_schema = vol.Schema(schema)
-        if user_input:
-            data_schema = self.add_suggested_values_to_schema(data_schema, user_input)
-        return self.async_show_form(step_id="locations", data_schema=data_schema, errors=errors)
+            self._settings = user_input
+            return await self.async_step_location()
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_MODEL, default=default_model(self._models, DEFAULT_MODEL)
+                ): _model_selector(self._models),
+                vol.Required(CONF_UPDATE_TIME, default=DEFAULT_UPDATE_TIME): TimeSelector(),
+            }
+        )
+        return self.async_show_form(step_id="settings", data_schema=schema)
+
+    async def async_step_location(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add one location."""
+        if user_input is not None:
+            self._locations.append(_location_from_input(user_input))
+            if len(self._locations) >= MAX_LOCATIONS:
+                return await self.async_step_finish()
+            return await self.async_step_more()
+
+        first = not self._locations
+        return self.async_show_form(
+            step_id="location",
+            data_schema=_location_schema(
+                "Doma" if first else None, self.hass.config.latitude, self.hass.config.longitude
+            ),
+            description_placeholders={
+                "number": str(len(self._locations) + 1),
+                "max": str(MAX_LOCATIONS),
+            },
+        )
+
+    async def async_step_more(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Ask whether to add another location."""
+        return self.async_show_menu(step_id="more", menu_options=["location", "finish"])
+
+    async def async_step_finish(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Create the entry."""
+        return self.async_create_entry(
+            title="Souhrn počasí",
+            data={CONF_API_KEY: self._api_key},
+            options={
+                CONF_MODEL: self._settings[CONF_MODEL],
+                CONF_UPDATE_TIME: self._settings[CONF_UPDATE_TIME],
+                CONF_PROMPT: DEFAULT_PROMPT,
+                CONF_LOCATIONS: self._locations,
+            },
+        )
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         """Handle an invalid API key."""
@@ -229,41 +234,119 @@ class CzWeatherConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class CzWeatherOptionsFlow(OptionsFlowWithReload):
-    """Edit model, prompt, schedule and locations; the entry reloads on save."""
+    """Menu to change settings and add, edit or remove locations; reloads on save."""
+
+    def __init__(self) -> None:
+        """Initialize the options flow."""
+        self._index = 0
+
+    @property
+    def _locations(self) -> list[dict[str, Any]]:
+        return list(self.config_entry.options.get(CONF_LOCATIONS, []))
+
+    def _save(self, **changes: Any) -> ConfigFlowResult:
+        return self.async_create_entry(data={**self.config_entry.options, **changes})
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Manage the options."""
-        errors: dict[str, str] = {}
+        """Show the menu."""
+        count = len(self._locations)
+        menu = ["settings", "edit_location"]
+        if count < MAX_LOCATIONS:
+            menu.append("add_location")
+        if count > 1:
+            menu.append("remove_location")
+        return self.async_show_menu(step_id="init", menu_options=menu)
+
+    async def async_step_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Model, generation time and prompt."""
         options = self.config_entry.options
         if user_input is not None:
-            locations, errors = _parse_locations(user_input)
-            if not errors:
-                return self.async_create_entry(
-                    data={
-                        CONF_MODEL: user_input[CONF_MODEL],
-                        CONF_UPDATE_TIME: user_input[CONF_UPDATE_TIME],
-                        CONF_PROMPT: (user_input.get(CONF_PROMPT) or "").strip() or DEFAULT_PROMPT,
-                        CONF_LOCATIONS: locations,
-                    }
-                )
+            return self._save(
+                **{
+                    CONF_MODEL: user_input[CONF_MODEL],
+                    CONF_UPDATE_TIME: user_input[CONF_UPDATE_TIME],
+                    CONF_PROMPT: (user_input.get(CONF_PROMPT) or "").strip() or DEFAULT_PROMPT,
+                }
+            )
 
         models, _ = await _validate_key(self.hass, self.config_entry.data[CONF_API_KEY])
         current_model = options.get(CONF_MODEL, DEFAULT_MODEL)
         if current_model not in models:
             models = [*models, current_model]
-        schema = {
-            vol.Required(CONF_MODEL, default=current_model): _model_selector(models),
-            vol.Required(
-                CONF_UPDATE_TIME, default=options.get(CONF_UPDATE_TIME, DEFAULT_UPDATE_TIME)
-            ): TimeSelector(),
-            # suggested_value so clearing the prompt restores the default.
-            vol.Optional(
-                CONF_PROMPT,
-                description={"suggested_value": options.get(CONF_PROMPT, DEFAULT_PROMPT)},
-            ): TextSelector(TextSelectorConfig(multiline=True)),
-            **_locations_schema(self.hass, options.get(CONF_LOCATIONS, []), with_region=True),
-        }
-        data_schema = vol.Schema(schema)
-        if user_input:
-            data_schema = self.add_suggested_values_to_schema(data_schema, user_input)
-        return self.async_show_form(step_id="init", data_schema=data_schema, errors=errors)
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_MODEL, default=current_model): _model_selector(models),
+                vol.Required(
+                    CONF_UPDATE_TIME, default=options.get(CONF_UPDATE_TIME, DEFAULT_UPDATE_TIME)
+                ): TimeSelector(),
+                # suggested_value so clearing the prompt restores the default.
+                vol.Optional(
+                    CONF_PROMPT,
+                    description={"suggested_value": options.get(CONF_PROMPT, DEFAULT_PROMPT)},
+                ): TextSelector(TextSelectorConfig(multiline=True)),
+            }
+        )
+        return self.async_show_form(step_id="settings", data_schema=schema)
+
+    async def async_step_add_location(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add a location."""
+        locations = self._locations
+        if len(locations) >= MAX_LOCATIONS:
+            return self.async_abort(reason="max_locations")
+        if user_input is not None:
+            return self._save(**{CONF_LOCATIONS: [*locations, _location_from_input(user_input)]})
+        return self.async_show_form(
+            step_id="add_location",
+            data_schema=_location_schema(
+                None, self.hass.config.latitude, self.hass.config.longitude, REGION_AUTO
+            ),
+        )
+
+    async def async_step_edit_location(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the location to edit."""
+        locations = self._locations
+        if len(locations) == 1:
+            return await self.async_step_edit_location_form()
+        if user_input is not None:
+            self._index = int(user_input[CONF_INDEX])
+            return await self.async_step_edit_location_form()
+        return self.async_show_form(step_id="edit_location", data_schema=_index_schema(locations))
+
+    async def async_step_edit_location_form(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Edit the chosen location."""
+        locations = self._locations
+        if user_input is not None:
+            locations[self._index] = _location_from_input(user_input)
+            return self._save(**{CONF_LOCATIONS: locations})
+        current = locations[self._index]
+        return self.async_show_form(
+            step_id="edit_location_form",
+            data_schema=_location_schema(
+                current[CONF_NAME],
+                current[CONF_LATITUDE],
+                current[CONF_LONGITUDE],
+                current.get(CONF_REGION, REGION_AUTO),
+            ),
+        )
+
+    async def async_step_remove_location(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Remove a location (at least one must stay)."""
+        locations = self._locations
+        if len(locations) <= 1:
+            return self.async_abort(reason="last_location")
+        if user_input is not None:
+            del locations[int(user_input[CONF_INDEX])]
+            return self._save(**{CONF_LOCATIONS: locations})
+        return self.async_show_form(
+            step_id="remove_location", data_schema=_index_schema(locations)
+        )

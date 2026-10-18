@@ -8,18 +8,27 @@
           "api_key": "API key"
         }
       },
-      "locations": {
-        "title": "Model and locations",
-        "description": "Pick the model, the daily generation time and 1–3 locations. Locations 2 and 3 are optional (leave the name empty). The CHMI region is detected automatically and can be changed later in the options.",
+      "settings": {
+        "title": "Model and schedule",
         "data": {
           "model": "Model",
-          "update_time": "Daily generation time",
-          "name_1": "Location 1 name",
-          "location_1": "Location 1",
-          "name_2": "Location 2 name",
-          "location_2": "Location 2",
-          "name_3": "Location 3 name",
-          "location_3": "Location 3"
+          "update_time": "Daily generation time"
+        }
+      },
+      "location": {
+        "title": "Location {number} of max. {max}",
+        "description": "Name the location and pick it on the map. The CHMI region is detected automatically and can be changed later in the options.",
+        "data": {
+          "name": "Name",
+          "location": "Location"
+        }
+      },
+      "more": {
+        "title": "Locations",
+        "description": "You can add up to 3 locations.",
+        "menu_options": {
+          "location": "Add another location",
+          "finish": "Finish"
         }
       },
       "reauth_confirm": {
@@ -32,9 +41,7 @@
     },
     "error": {
       "invalid_auth": "Invalid OpenAI API key.",
-      "cannot_connect": "Cannot connect to OpenAI.",
-      "no_locations": "Configure at least one location.",
-      "location_required": "Pick the location on the map."
+      "cannot_connect": "Cannot connect to OpenAI."
     },
     "abort": {
       "reauth_successful": "API key updated."
@@ -44,37 +51,68 @@
     "step": {
       "init": {
         "title": "Weather summary settings",
-        "description": "To remove location 2 or 3, clear its name.",
+        "menu_options": {
+          "settings": "Model, time and prompt",
+          "edit_location": "Edit location",
+          "add_location": "Add location",
+          "remove_location": "Remove location"
+        }
+      },
+      "settings": {
+        "title": "Model, time and prompt",
         "data": {
           "model": "Model",
           "update_time": "Daily generation time",
-          "prompt": "System prompt",
-          "name_1": "Location 1 name",
-          "location_1": "Location 1",
-          "region_1": "Location 1 CHMI region",
-          "name_2": "Location 2 name",
-          "location_2": "Location 2",
-          "region_2": "Location 2 CHMI region",
-          "name_3": "Location 3 name",
-          "location_3": "Location 3",
-          "region_3": "Location 3 CHMI region"
+          "prompt": "System prompt"
         },
         "data_description": {
-          "prompt": "Instructions for the model. The model must return JSON with keys short, summary and clothing."
+          "prompt": "Instructions for the model. It must return JSON with keys short, summary and clothing. Clear it to restore the default."
+        }
+      },
+      "add_location": {
+        "title": "Add location",
+        "data": {
+          "name": "Name",
+          "location": "Location",
+          "region": "CHMI region"
+        }
+      },
+      "edit_location": {
+        "title": "Edit location",
+        "data": {
+          "index": "Location"
+        }
+      },
+      "edit_location_form": {
+        "title": "Edit location",
+        "data": {
+          "name": "Name",
+          "location": "Location",
+          "region": "CHMI region"
+        }
+      },
+      "remove_location": {
+        "title": "Remove location",
+        "data": {
+          "index": "Location"
         }
       }
     },
-    "error": {
-      "invalid_auth": "Invalid OpenAI API key.",
-      "cannot_connect": "Cannot connect to OpenAI.",
-      "no_locations": "Configure at least one location.",
-      "location_required": "Pick the location on the map."
+    "abort": {
+      "max_locations": "You already have the maximum of 3 locations.",
+      "last_location": "At least one location must remain."
     }
   },
   "entity": {
     "sensor": {
+      "short": {
+        "name": "Short summary"
+      },
       "summary": {
         "name": "Weather summary"
+      },
+      "clothing": {
+        "name": "Clothing advice"
       }
     }
   },

@@ -14,6 +14,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 
 from custom_components.cz_weather_summary.chmi import ChmiError, RegionForecast, parse_forecast
 from custom_components.cz_weather_summary.const import (
@@ -86,9 +87,41 @@ def sources():
 async def _setup(hass, entry) -> str:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done(wait_background_tasks=True)
-    entity_ids = hass.states.async_entity_ids("sensor")
-    assert len(entity_ids) == 1
-    return entity_ids[0]
+    assert len(hass.states.async_entity_ids("sensor")) == 3
+    return _entity_id(hass, entry, "short")
+
+
+def _entity_id(hass, entry, suffix: str) -> str:
+    """Entity id of a sensor by its key."""
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_{suffix}"
+    )
+    assert entity_id
+    return entity_id
+
+
+async def test_three_sensors(hass, entry, sources, freezer) -> None:
+    """Short summary, full summary and clothing advice are separate sensors."""
+    freezer.move_to(datetime(2026, 10, 18, 8, 0, tzinfo=TZ))
+    await _setup(hass, entry)
+    full = hass.states.get(_entity_id(hass, entry, "summary"))
+    clothing = hass.states.get(_entity_id(hass, entry, "clothing"))
+    assert full.state == "Celý souhrn."
+    assert full.attributes["text"] == "Celý souhrn."
+    assert clothing.state == "Mikina."
+    assert "locations" not in clothing.attributes
+
+
+async def test_long_text_truncated(hass, entry, sources, freezer) -> None:
+    """States are capped at 255 characters; the full text stays in the attribute."""
+    freezer.move_to(datetime(2026, 10, 18, 8, 0, tzinfo=TZ))
+    _, _, llm = sources
+    long_text = "Slunečno. " * 60
+    llm.return_value = {**SUMMARY, "summary": long_text}
+    await _setup(hass, entry)
+    full = hass.states.get(_entity_id(hass, entry, "summary"))
+    assert len(full.state) == 255
+    assert full.attributes["text"] == long_text
 
 
 async def test_setup_generates_summary(hass, entry, sources, freezer) -> None:
