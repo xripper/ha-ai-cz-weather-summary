@@ -71,6 +71,8 @@ python -m script.smoke            # živá data z ČHMÚ a Open-Meteo
 OPENAI_API_KEY=sk-... python -m script.smoke   # včetně souhrnu z OpenAI
 ```
 
+Vydání nové verze: zvyš `version` v `manifest.json` (semver), commitni a pushni tag `vX.Y.Z` – workflow *Release* ověří, že tag sedí s manifestem, a vytvoří GitHub release, který HACS nabídne jako verzi.
+
 Testy vyžadují Linux nebo macOS (Home Assistant nejde spustit na Windows, použij WSL).
 Polygony krajů (`regions.json`) se generují skriptem `script/build_regions.py`.
 
