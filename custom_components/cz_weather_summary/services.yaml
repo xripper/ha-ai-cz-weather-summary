@@ -1,0 +1,7 @@
+refresh:
+  fields:
+    entry_id:
+      required: false
+      selector:
+        config_entry:
+          integration: cz_weather_summary

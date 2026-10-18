@@ -1,0 +1,101 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "OpenAI",
+        "description": "Zadej OpenAI API klíč, který se použije pro generování souhrnu počasí.",
+        "data": {
+          "api_key": "API klíč"
+        }
+      },
+      "locations": {
+        "title": "Model a místa",
+        "description": "Vyber model, čas denního generování a 1–3 místa. Místa 2 a 3 jsou volitelná (nech prázdný název). Kraj ČHMÚ se určí automaticky a jde později změnit v možnostech.",
+        "data": {
+          "model": "Model",
+          "update_time": "Čas denního generování",
+          "name_1": "Název místa 1",
+          "location_1": "Místo 1",
+          "name_2": "Název místa 2",
+          "location_2": "Místo 2",
+          "name_3": "Název místa 3",
+          "location_3": "Místo 3"
+        }
+      },
+      "reauth_confirm": {
+        "title": "OpenAI",
+        "description": "OpenAI API klíč už není platný. Zadej nový.",
+        "data": {
+          "api_key": "API klíč"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Neplatný OpenAI API klíč.",
+      "cannot_connect": "Nelze se připojit k OpenAI.",
+      "no_locations": "Nastav alespoň jedno místo.",
+      "location_required": "Vyber místo na mapě."
+    },
+    "abort": {
+      "reauth_successful": "API klíč byl aktualizován."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nastavení souhrnu počasí",
+        "description": "Místo 2 nebo 3 odstraníš smazáním jeho názvu.",
+        "data": {
+          "model": "Model",
+          "update_time": "Čas denního generování",
+          "prompt": "Systémový prompt",
+          "name_1": "Název místa 1",
+          "location_1": "Místo 1",
+          "region_1": "Kraj ČHMÚ pro místo 1",
+          "name_2": "Název místa 2",
+          "location_2": "Místo 2",
+          "region_2": "Kraj ČHMÚ pro místo 2",
+          "name_3": "Název místa 3",
+          "location_3": "Místo 3",
+          "region_3": "Kraj ČHMÚ pro místo 3"
+        },
+        "data_description": {
+          "prompt": "Instrukce pro model. Model musí vrátit JSON s klíči short, summary a clothing."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Neplatný OpenAI API klíč.",
+      "cannot_connect": "Nelze se připojit k OpenAI.",
+      "no_locations": "Nastav alespoň jedno místo.",
+      "location_required": "Vyber místo na mapě."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "summary": {
+        "name": "Souhrn počasí"
+      }
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Obnovit souhrn",
+      "description": "Znovu stáhne předpověď a vygeneruje nový souhrn.",
+      "fields": {
+        "entry_id": {
+          "name": "Položka",
+          "description": "Obnoví jen tuto položku (prázdné = všechny)."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "entry_not_found": {
+      "message": "Nenalezena žádná načtená položka CZ Weather Summary."
+    },
+    "refresh_failed": {
+      "message": "Aktualizace souhrnu počasí selhala: {error}"
+    }
+  }
+}

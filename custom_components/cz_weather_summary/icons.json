@@ -1,0 +1,14 @@
+{
+  "entity": {
+    "sensor": {
+      "summary": {
+        "default": "mdi:weather-partly-cloudy"
+      }
+    }
+  },
+  "services": {
+    "refresh": {
+      "service": "mdi:refresh"
+    }
+  }
+}

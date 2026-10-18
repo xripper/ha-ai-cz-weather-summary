@@ -1,0 +1,13 @@
+{
+  "domain": "cz_weather_summary",
+  "name": "CZ Weather Summary",
+  "codeowners": ["@xripper"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/xripper/ha-ai-cz-weather-summary",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/xripper/ha-ai-cz-weather-summary/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
