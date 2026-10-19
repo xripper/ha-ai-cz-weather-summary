@@ -234,6 +234,47 @@ async def test_failed_scheduled_run_is_retried(hass, entry, sources, freezer, ha
     assert hass.states.get(entity_id).attributes["last_error"] is None
 
 
+async def test_retries_reset_for_next_scheduled_run(
+    hass, entry, sources, freezer, hass_storage
+) -> None:
+    """Exhausting retries on one day doesn't disable retries on the next."""
+    freezer.move_to(datetime(2026, 10, 18, 5, 59, 0, tzinfo=TZ))
+    hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {
+        "version": 1,
+        "data": {
+            **SUMMARY,
+            "generated_at": "2026-10-17T06:00:05+02:00",
+            "locations": [],
+            "options_hash": options_hash(entry.options),
+        },
+    }
+    _, _, llm = sources
+    entity_id = await _setup(hass, entry)
+    llm.side_effect = OpenAIError("outage")
+
+    freezer.move_to(datetime(2026, 10, 18, 6, 0, 0, tzinfo=TZ))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    for _ in range(7):
+        freezer.tick(timedelta(minutes=31))
+        async_fire_time_changed(hass)
+        await hass.async_block_till_done(wait_background_tasks=True)
+    # Scheduled run plus MAX_RETRIES retries, then it gives up for the day.
+    assert llm.await_count == 7
+
+    freezer.move_to(datetime(2026, 10, 19, 6, 0, 0, tzinfo=TZ))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert llm.await_count == 8
+
+    llm.side_effect = None
+    freezer.tick(timedelta(minutes=31))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert llm.await_count == 9
+    assert hass.states.get(entity_id).attributes["last_error"] is None
+
+
 async def test_options_change_regenerates(hass, entry, sources, freezer, hass_storage) -> None:
     """A stored summary made with different options is regenerated on setup."""
     freezer.move_to(datetime(2026, 10, 18, 8, 0, tzinfo=TZ))

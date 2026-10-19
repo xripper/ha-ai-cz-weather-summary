@@ -127,6 +127,12 @@ class CzWeatherCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._cancel_retry()
             self._cancel_retry = None
 
+    async def async_fresh_refresh(self) -> None:
+        """Run a scheduled or manual update with a full retry budget."""
+        self._retries = 0
+        self.async_cancel_retry()
+        await self.async_refresh()
+
     @callback
     def _schedule_retry(self) -> None:
         """Retry a failed run later, a limited number of times."""

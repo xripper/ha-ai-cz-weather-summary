@@ -42,7 +42,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         for entry in entries:
             coordinator: CzWeatherCoordinator = entry.runtime_data
             previous = (coordinator.data or {}).get("generated_at")
-            await coordinator.async_refresh()
+            await coordinator.async_fresh_refresh()
             data = coordinator.data or {}
             if not coordinator.last_update_success:
                 errors.append(str(coordinator.last_exception))
@@ -73,7 +73,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CzWeatherConfigEntry) ->
     @callback
     def _scheduled(_now: datetime) -> None:
         entry.async_create_background_task(
-            hass, coordinator.async_refresh(), f"{DOMAIN}_scheduled_refresh"
+            hass, coordinator.async_fresh_refresh(), f"{DOMAIN}_scheduled_refresh"
         )
 
     entry.async_on_unload(
