@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
+import logging
 from typing import Any
 
 import aiohttp
 
 from .const import OPEN_METEO_URL, TIMEZONE
+
+_LOGGER = logging.getLogger(__name__)
+
+# Seconds to wait before each retry of a transient Open-Meteo error.
+RETRY_DELAYS = (10, 30)
 
 HOURLY = (
     "temperature_2m",
@@ -168,16 +175,35 @@ async def async_get_point_forecast(
         "forecast_days": "1",
         "wind_speed_unit": "ms",
     }
+    # Open-Meteo is often overloaded on the hour; retry transient errors.
+    for delay in RETRY_DELAYS:
+        try:
+            return await _fetch(session, params)
+        except _TransientError as err:
+            _LOGGER.debug("%s, retrying in %s s", err, delay)
+            await asyncio.sleep(delay)
+    try:
+        return await _fetch(session, params)
+    except _TransientError as err:
+        raise OpenMeteoError(str(err)) from err
+
+
+class _TransientError(Exception):
+    """Open-Meteo error worth retrying."""
+
+
+async def _fetch(session: aiohttp.ClientSession, params: dict[str, str]) -> dict[str, Any]:
     try:
         async with session.get(
             OPEN_METEO_URL, params=params, timeout=aiohttp.ClientTimeout(total=30)
         ) as resp:
             if resp.status != 200:
-                raise OpenMeteoError(
-                    f"Open-Meteo returned HTTP {resp.status}: {(await resp.text())[:200]}"
-                )
+                message = f"Open-Meteo returned HTTP {resp.status}: {(await resp.text())[:200]}"
+                if resp.status == 429 or resp.status >= 500:
+                    raise _TransientError(message)
+                raise OpenMeteoError(message)
             return await resp.json()
     except ValueError as err:
         raise OpenMeteoError(f"Invalid JSON from Open-Meteo: {err}") from err
     except (aiohttp.ClientError, TimeoutError) as err:
-        raise OpenMeteoError(f"Cannot fetch Open-Meteo forecast: {err}") from err
+        raise _TransientError(f"Cannot fetch Open-Meteo forecast: {err}") from err
